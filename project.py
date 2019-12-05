@@ -1,31 +1,44 @@
 import subprocess
 import fnmatch
 import os, os.path
-
+import sys
 import multiprocessing
 from multiprocessing.dummy import Pool as ThreadPool 
-
 import json
 
-number_of_cores = 4
-number_of_features_per_frame = 3
+if(len(sys.argv) > 1):
+    video_name = sys.argv[1]
+else:
+    video_name = "420.mp4"
 
+threshold = 0.5 #min threshold to even consider a feature
+number_of_cores = 4 #number of cores on the CPU running it
+number_of_features_per_frame = 3 # features extracted from each frame when running overfeat
+
+
+print "\nNumber of cores used: " + str(number_of_cores)
+print "Number features analyzed per frame: " + str(number_of_features_per_frame)
+
+print("\nExtracting frames from: " + video_name)
+
+#removing folder if it exists 
 clean_cmd = 'rm -r ffmpeg_stuff'
 setup_cmd = 'mkdir ffmpeg_stuff'
-ffmpeg_cmd = 'ffmpeg -i 420.mp4 ffmpeg_stuff/%04d.jpg -hide_banner'
+ffmpeg_cmd = 'ffmpeg -i ' + video_name + ' ffmpeg_stuff/%04d.jpg -hide_banner -loglevel panic'
 _and_ = ' && '
 rm_odds = 'rm -f ffmpeg_stuff/*[13579].jpg'
 
 cmd = clean_cmd + _and_ + setup_cmd + _and_ + ffmpeg_cmd + _and_ + rm_odds
-os.system(cmd)
 
+os.system(cmd)
 
 files = fnmatch.filter(os.listdir(os.getcwd()+'/ffmpeg_stuff/'), '*.jpg')
 number_files =  len(files)
 
 info = {}
-
 cmd = os.getcwd()+'/overfeat/bin/linux_64/overfeat -n ' + str(number_of_features_per_frame) 
+
+print("Finished frame extraction.\n\nAnalyzing frames of: " +video_name)
 
 #used to analyze one frame, deprecated in favor of analyze_frames_by_chunks
 def analyze_frame(file_name):
@@ -71,8 +84,6 @@ def analyze_frames_by_chunks(files):
         number = int(files[idx].strip('0').strip('.jpg'))
         info[number] = res
         
-
-
 def filterBlanks(line):
     return line != ''
 
@@ -81,7 +92,6 @@ def chunkIt(seq, num):
     avg = len(seq) / float(num)
     out = []
     last = 0.0
-
     while last < len(seq):
         out.append(seq[int(last):int(last + avg)])
         last += avg
@@ -96,8 +106,7 @@ pool = ThreadPool(number_of_cores)
 results = pool.map(analyze_frames_by_chunks, files_in_chunks) # real    6m2.109s
 #results = pool.map(analyze_frame, files) # 7m41.077s
 
-#min threshold to even consider a feature
-threshold = 0.5
+print("\nFinished analysis. Gathering results")
 
 features_to_frames = {}
 for idx, features in info.items():
@@ -133,6 +142,8 @@ def build_answer(dict):
     out = ''
     for key, list in dict.items():
         for i in range(0, len(list)/2):
+            if list[i*2] == list[2*i + 1]:
+                continue
             res = key + ": "
             res += "from second {:10.4f} to second {:10.4f} \n".format( float(list[i*2])/frames_per_sec , float(list[i*2+1]) /frames_per_sec )
             out += res
@@ -140,7 +151,10 @@ def build_answer(dict):
 
 text =  build_answer(final_output)
 
-print text
+if(final_output):
+    print(text)
+else:
+    print("\nNo object on the video was sucessfully recognized.")
+
 with open('results.json', 'w') as file:
-    file.write(json.dumps(info)) 
     file.write(text)
