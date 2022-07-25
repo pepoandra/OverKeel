@@ -1,0 +1,7 @@
+version: '3.5'
+
+services:
+  overkeel:
+    build:
+      context: .
+    command: ["python", "project.py"]
